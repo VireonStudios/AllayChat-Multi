@@ -1,0 +1,7 @@
+redis-uri: "redis://localhost:6379"
+
+group: skyblock # must be same on every server
+
+# set to true on the main server, false on other servers
+# main server is in charge of managing servers and player list
+main-server: true

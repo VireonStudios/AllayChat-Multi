@@ -1,0 +1,5 @@
+name: MultiServer
+version: "${version}"
+main: net.voxelarc.allaychat.multiserver.MultiServerModule
+author: "hyperion"
+description: Provides Multi-Server functionality for AllayChat.
