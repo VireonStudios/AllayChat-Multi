@@ -1,4 +1,4 @@
-redis-uri: "redis://localhost:6379"
+redis-uri: "redis://password@localhost:6379"
 
 group: skyblock # must be same on every server
 
