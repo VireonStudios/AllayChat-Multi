@@ -6,6 +6,7 @@ import io.papermc.paper.chat.ChatRenderer;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -35,6 +36,9 @@ public class CrossChatManager implements ChatManager {
     @Getter
     private final Cache<UUID, Inventory> inventoryCache = CacheBuilder.newBuilder()
             .expireAfterWrite(3, TimeUnit.MINUTES).build();
+
+    @Setter
+    private boolean mutedStatus = false;
 
     @Override
     public void onEnable() {
@@ -172,6 +176,16 @@ public class CrossChatManager implements ChatManager {
 
         Component title = ChatUtils.format(titleString, Placeholder.unparsed("player", playerName));
         module.publishInventory(uuid, title, inventory.getContents(), size);
+    }
+
+    @Override
+    public boolean isChatMuted() {
+        return this.mutedStatus;
+    }
+
+    @Override
+    public void setChatMuted(boolean b) {
+        module.publishMuteStatus(b);
     }
 
 }

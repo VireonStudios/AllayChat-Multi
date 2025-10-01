@@ -8,6 +8,7 @@ import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import lombok.Getter;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.sound.Sound;
@@ -27,11 +28,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public final class MultiServerModule extends Module {
@@ -49,6 +51,8 @@ public final class MultiServerModule extends Module {
     public static final String INVENTORY_CHANNEL = "allaychat:inventory";
 
     public static final String REPLY_CHANNEL = "allaychat:reply";
+
+    public static final String MUTE_CHANNEL = "allaychat:mute";
 
     public static final String PLAYER_JOIN_CHANNEL = "allaychat:player:join";
     public static final String PLAYER_QUIT_CHANNEL = "allaychat:player:quit";
@@ -117,47 +121,43 @@ public final class MultiServerModule extends Module {
         connection.subscribe(
                 MESSAGE_CHANNEL, INVENTORY_CHANNEL, BROADCAST_CHANNEL,
                 PLAY_SOUND_CHANNEL, TITLE_CHANNEL, ACTIONBAR_CHANNEL, SEND_MESSAGE_CHANNEL,
-                PLAYER_CLEAR_CHANNEL, PLAYER_JOIN_CHANNEL, PLAYER_QUIT_CHANNEL, REPLY_CHANNEL
+                PLAYER_CLEAR_CHANNEL, PLAYER_JOIN_CHANNEL, PLAYER_QUIT_CHANNEL, REPLY_CHANNEL, MUTE_CHANNEL
         ).whenComplete((result, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Subscribe failed: " + throwable.getMessage(), throwable);
             }
         });
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                updateLastHeartbeat();
+        Consumer<ScheduledTask> playerUpdateTask = (task) -> {
+            updateLastHeartbeat();
+            RedisCommands<String, String> c = redisConnection.sync();
+            Set<String> allPlayers = crossPlayerManager.getAllPlayers();
+            allPlayers.clear();
+            allPlayers.addAll(c.hgetall(PLAYER_LIST_MAP_KEY + group).keySet());
+        };
 
-                RedisCommands<String, String> connection = redisConnection.sync();
-                Set<String> allPlayers = crossPlayerManager.getAllPlayers();
-                allPlayers.clear();
-                allPlayers.addAll(connection.hgetall(PLAYER_LIST_MAP_KEY + group).keySet());
-            }
-        }.runTaskTimerAsynchronously(getPlugin(), 0, 10 * 20);
+        Bukkit.getAsyncScheduler().runAtFixedRate(getPlugin(), playerUpdateTask, 10, 10, TimeUnit.SECONDS);
 
         if (getConfig().getBoolean("main-server")) {
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    RedisCommands<String, String> connection = redisConnection.sync();
-                    for (Map.Entry<String, String> entry : connection.hgetall(SERVER_LIST_MAP_KEY + group).entrySet()) {
-                        long lastHeartbeat = Long.parseLong(entry.getValue());
-                        long currentTime = System.currentTimeMillis();
-                        if (currentTime - lastHeartbeat > 3 * 60 * 1000) { // 3 minutes
-                            MultiServerModule.this.getLogger().info("Marking server " + entry.getKey() + " as offline due to no heartbeat received in the last 3 minutes.");
-                            connection.hdel(SERVER_LIST_MAP_KEY + group, entry.getKey());
+            Consumer<ScheduledTask> playerListValidateTask = (task) -> {
+                RedisCommands<String, String> c = redisConnection.sync();
+                for (Map.Entry<String, String> entry : c.hgetall(SERVER_LIST_MAP_KEY + group).entrySet()) {
+                    long lastHeartbeat = Long.parseLong(entry.getValue());
+                    long currentTime = System.currentTimeMillis();
+                    if (currentTime - lastHeartbeat > 3 * 60 * 1000) { // 3 minutes
+                        MultiServerModule.this.getLogger().info("Marking server " + entry.getKey() + " as offline due to no heartbeat received in the last 3 minutes.");
+                        c.hdel(SERVER_LIST_MAP_KEY + group, entry.getKey());
 
-                            // remove all players from the player list map that are associated with this server
-                            for (Map.Entry<String, String> playerEntry : connection.hgetall(PLAYER_LIST_MAP_KEY + group).entrySet()) {
-                                if (playerEntry.getValue().equalsIgnoreCase(entry.getKey())) {
-                                    connection.hdel(PLAYER_LIST_MAP_KEY + group, playerEntry.getKey());
-                                }
+                        // remove all players from the player list map that are associated with this server
+                        for (Map.Entry<String, String> playerEntry : c.hgetall(PLAYER_LIST_MAP_KEY + group).entrySet()) {
+                            if (playerEntry.getValue().equalsIgnoreCase(entry.getKey())) {
+                                c.hdel(PLAYER_LIST_MAP_KEY + group, playerEntry.getKey());
                             }
                         }
                     }
                 }
-            }.runTaskTimerAsynchronously(getPlugin(), 0, 20 * 30); // 30 seconds
+            };
+            Bukkit.getAsyncScheduler().runAtFixedRate(getPlugin(), playerListValidateTask, 1, 30, TimeUnit.SECONDS);
         }
 
         registerListeners(new ConnectionListener(this));
@@ -274,6 +274,11 @@ public final class MultiServerModule extends Module {
 
                 crossChatManager.getLastMessageCache().put(packet.playerOne(), packet.playerTwo());
             }
+
+            case MUTE_CHANNEL -> {
+                MutePacket packet = GSON.fromJson(message, MutePacket.class);
+                crossChatManager.setMutedStatus(packet.muted());
+            }
         }
     }
 
@@ -341,6 +346,11 @@ public final class MultiServerModule extends Module {
     public void publishBroadcast(Component component, String permission) {
         BroadcastPacket packet = new BroadcastPacket(group, GsonComponentSerializer.gson().serialize(component), permission);
         redisConnection.async().publish(BROADCAST_CHANNEL, GSON.toJson(packet));
+    }
+
+    public void publishMuteStatus(boolean muted) {
+        MutePacket packet = new MutePacket(muted);
+        redisConnection.async().publish(MUTE_CHANNEL, GSON.toJson(packet));
     }
 
 }

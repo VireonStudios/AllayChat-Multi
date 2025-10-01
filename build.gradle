@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'net.voxelarc.allaychat'
-version = '1.0.0-SNAPSHOT'
+version = '1.1.0'
 
 repositories {
     mavenCentral()
@@ -17,8 +17,8 @@ repositories {
         url = "https://oss.sonatype.org/content/groups/public/"
     }
     maven {
-        name = "voxelarc-snapshots"
-        url = "https://repo.voxelarc.net/snapshots"
+        name = "voxelarc-releases"
+        url = "https://repo.voxelarc.net/releases"
     }
 }
 
@@ -28,8 +28,8 @@ dependencies {
 
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
 
-    compileOnly("io.lettuce:lettuce-core:6.6.0.RELEASE")
-    compileOnly("net.voxelarc.allaychat:api:1.0.0-SNAPSHOT")
+    compileOnly("io.lettuce:lettuce-core:6.8.1.RELEASE")
+    compileOnly "net.voxelarc.allaychat:api:1.1.0"
 }
 
 def targetJavaVersion = 21
@@ -56,12 +56,5 @@ processResources {
     filteringCharset 'UTF-8'
     filesMatching('module.yml') {
         expand props
-    }
-}
-
-configurations.configureEach {
-    resolutionStrategy {
-        force "net.voxelarc.allaychat:api:1.0.0-SNAPSHOT"
-        cacheChangingModulesFor 0, 'seconds'
     }
 }

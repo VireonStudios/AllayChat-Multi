@@ -8,6 +8,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.concurrent.TimeUnit;
+
 @RequiredArgsConstructor
 public class ConnectionListener implements Listener {
 
@@ -16,8 +18,8 @@ public class ConnectionListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         // Remove on PlayerQuitEvent may conflict on server switches, so we delay adding the player
-        Bukkit.getScheduler().runTaskLater(module.getPlugin(),
-                () -> module.addPlayer(event.getPlayer().getName()), 10);
+        Bukkit.getAsyncScheduler().runDelayed(module.getPlugin(),
+                (task) -> module.addPlayer(event.getPlayer().getName()), 1, TimeUnit.SECONDS);
     }
 
     @EventHandler
