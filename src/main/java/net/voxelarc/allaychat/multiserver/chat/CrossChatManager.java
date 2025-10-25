@@ -140,12 +140,7 @@ public class CrossChatManager implements ChatManager {
         module.publishLastReply(from.getName(), to);
         module.publishLastReply(to, from.getName());
 
-        plugin.getUserManager().getAllUsers().stream().filter(ChatUser::isSpyEnabled).forEach(spyUser -> {
-            Player player = Bukkit.getPlayer(spyUser.getUniqueId());
-            if (player == null) return;
-
-            ChatUtils.sendMessage(player, spyComponent);
-        });
+        module.publishSpy(spyComponent);
 
         return true;
     }
