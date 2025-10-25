@@ -47,6 +47,7 @@ public final class MultiServerModule extends Module {
     public static final String ACTIONBAR_CHANNEL = "allaychat:send:actionbar";
     public static final String SEND_MESSAGE_CHANNEL = "allaychat:send:message";
     public static final String BROADCAST_CHANNEL = "allaychat:send:broadcast";
+    public static final String MENTION_CHANNEL = "allaychat:mention";
 
     public static final String INVENTORY_CHANNEL = "allaychat:inventory";
 
@@ -121,7 +122,7 @@ public final class MultiServerModule extends Module {
         connection.subscribe(
                 MESSAGE_CHANNEL, INVENTORY_CHANNEL, BROADCAST_CHANNEL,
                 PLAY_SOUND_CHANNEL, TITLE_CHANNEL, ACTIONBAR_CHANNEL, SEND_MESSAGE_CHANNEL,
-                PLAYER_CLEAR_CHANNEL, PLAYER_JOIN_CHANNEL, PLAYER_QUIT_CHANNEL, REPLY_CHANNEL, MUTE_CHANNEL
+                PLAYER_CLEAR_CHANNEL, PLAYER_JOIN_CHANNEL, PLAYER_QUIT_CHANNEL, REPLY_CHANNEL, MUTE_CHANNEL, MENTION_CHANNEL
         ).whenComplete((result, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Subscribe failed: " + throwable.getMessage(), throwable);
@@ -279,6 +280,13 @@ public final class MultiServerModule extends Module {
                 MutePacket packet = GSON.fromJson(message, MutePacket.class);
                 crossChatManager.setMutedStatus(packet.muted());
             }
+
+            case MENTION_CHANNEL -> {
+                MentionPacket packet = GSON.fromJson(message, MentionPacket.class);
+                if (!packet.group().equals(group)) return;
+
+                crossChatManager.handleMentionInternally(packet);
+            }
         }
     }
 
@@ -351,6 +359,11 @@ public final class MultiServerModule extends Module {
     public void publishMuteStatus(boolean muted) {
         MutePacket packet = new MutePacket(muted);
         redisConnection.async().publish(MUTE_CHANNEL, GSON.toJson(packet));
+    }
+
+    public void publishMention(String mentioner, String mentioned) {
+        MentionPacket packet = new MentionPacket(mentioned, mentioner, group);
+        redisConnection.async().publish(MENTION_CHANNEL, GSON.toJson(packet));
     }
 
 }

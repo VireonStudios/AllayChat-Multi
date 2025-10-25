@@ -7,14 +7,20 @@ import io.papermc.paper.event.player.AsyncChatEvent;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.sound.Sound;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 import net.voxelarc.allaychat.api.AllayChat;
 import net.voxelarc.allaychat.api.chat.ChatManager;
+import net.voxelarc.allaychat.api.config.YamlConfig;
 import net.voxelarc.allaychat.api.user.ChatUser;
 import net.voxelarc.allaychat.api.util.ChatUtils;
 import net.voxelarc.allaychat.multiserver.MultiServerModule;
+import net.voxelarc.allaychat.multiserver.packet.MentionPacket;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -138,7 +144,7 @@ public class CrossChatManager implements ChatManager {
             Player player = Bukkit.getPlayer(spyUser.getUniqueId());
             if (player == null) return;
 
-            plugin.getPlayerManager().sendMessage(player.getName(), spyComponent);
+            ChatUtils.sendMessage(player, spyComponent);
         });
 
         return true;
@@ -186,6 +192,63 @@ public class CrossChatManager implements ChatManager {
     @Override
     public void setChatMuted(boolean b) {
         module.publishMuteStatus(b);
+    }
+
+    @Override
+    public Component handleMentions(Player player, String messageContent, Component messageComponent) {
+        YamlConfig replacementConfig = plugin.getReplacementConfig();
+        if (replacementConfig.getBoolean("mention.enabled")) {
+            for (String playerName : plugin.getPlayerManager().getAllPlayers()) {
+                if (messageContent.contains(playerName)) {
+                    module.publishMention(player.getName(), playerName);
+                    messageComponent = messageComponent.replaceText(TextReplacementConfig.builder()
+                            .matchLiteral(playerName)
+                            .replacement(ChatUtils.format(replacementConfig.getString("mention.text"), Placeholder.unparsed("player", playerName)))
+                            .build()
+                    );
+                }
+            }
+        }
+
+        return messageComponent;
+    }
+
+    public void handleMentionInternally(MentionPacket packet) {
+        YamlConfig replacementConfig = plugin.getReplacementConfig();
+        String playerName = packet.mentionedPlayer();
+        Player targetPlayer = Bukkit.getPlayerExact(playerName);
+        if (targetPlayer == null) return;
+        ChatUser user = plugin.getUserManager().getUser(targetPlayer.getUniqueId());
+        if (user == null) return;
+        boolean allow = user.isChatEnabled() && user.isMentionsEnabled() && !user.getIgnoredPlayers().contains(packet.mentionerPlayer());
+
+        String soundName = replacementConfig.getString("mention.sound");
+        if (soundName != null && !soundName.isEmpty() && allow) {
+            Sound sound = Sound.sound(Key.key(soundName), Sound.Source.MASTER, 1.0f, 1.0f);
+            targetPlayer.playSound(sound);
+        }
+
+        if (replacementConfig.getBoolean("mention.title.enabled") && allow) {
+            String titleText = replacementConfig.getString("mention.title.title");
+            String subtitleText = replacementConfig.getString("mention.title.subtitle");
+            Title title = Title.title(
+                    ChatUtils.format(titleText, Placeholder.unparsed("player", packet.mentionerPlayer())),
+                    ChatUtils.format(subtitleText, Placeholder.unparsed("player", packet.mentionerPlayer()))
+            );
+            targetPlayer.showTitle(title);
+        }
+
+        String actionBar = replacementConfig.getString("mention.actionbar");
+        if (actionBar != null && !actionBar.isEmpty() && allow) {
+            Component actionBarComponent = ChatUtils.format(actionBar, Placeholder.unparsed("player", packet.mentionerPlayer()));
+            targetPlayer.sendActionBar(actionBarComponent);
+        }
+
+        String mentionMessage = replacementConfig.getString("mention.message");
+        if (mentionMessage != null && !mentionMessage.isEmpty() && allow) {
+            Component mentionMessageComponent = ChatUtils.format(mentionMessage, Placeholder.unparsed("player", packet.mentionerPlayer()));
+            ChatUtils.sendMessage(targetPlayer, mentionMessageComponent);
+        }
     }
 
 }
