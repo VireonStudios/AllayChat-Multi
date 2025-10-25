@@ -362,7 +362,7 @@ public final class MultiServerModule extends Module {
     }
 
     public void publishSpy(Component component) {
-        SpyMessagePacket packet = new SpyMessagePacket(group, GsonComponentSerializer.gson().serialize(component));
+        SpyMessagePacket packet = new SpyMessagePacket(GsonComponentSerializer.gson().serialize(component), group);
         redisConnection.async().publish(SPY_CHANNEL, GSON.toJson(packet));
     }
 
