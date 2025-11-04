@@ -21,6 +21,7 @@ import net.voxelarc.allaychat.api.user.ChatUser;
 import net.voxelarc.allaychat.api.util.ChatUtils;
 import net.voxelarc.allaychat.multiserver.MultiServerModule;
 import net.voxelarc.allaychat.multiserver.packet.MentionPacket;
+import net.voxelarc.allaychat.multiserver.packet.PrivateMessagePacket;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -110,37 +111,19 @@ public class CrossChatManager implements ChatManager {
             return false;
         }
 
+        if (!user.isMsgEnabled()) {
+            ChatUtils.sendMessage(from, ChatUtils.format(
+                    plugin.getPrivateMessageConfig().getString("messages.disabled")
+            ));
+            return false;
+        }
+
         if (plugin.getPrivateMessageConfig().getBoolean("filter")
                 && handleMessage(from, message)) {
             return false;
         }
 
-        Component spyComponent = ChatUtils.format(
-                plugin.getPrivateMessageConfig().getString("messages.spy"),
-                Placeholder.unparsed("from", from.getName()),
-                Placeholder.unparsed("to", to),
-                Placeholder.unparsed("message", message)
-        );
-
-        Component msgTarget = ChatUtils.format(
-                plugin.getPrivateMessageConfig().getString("messages.format-target"),
-                Placeholder.unparsed("player", from.getName()),
-                Placeholder.unparsed("message", message)
-        );
-
-        Component msgSender = ChatUtils.format(
-                plugin.getPrivateMessageConfig().getString("messages.format-self"),
-                Placeholder.unparsed("player", to),
-                Placeholder.unparsed("message", message)
-        );
-
-        plugin.getPlayerManager().sendMessage(to, msgTarget);
-        ChatUtils.sendMessage(from, msgSender);
-
-        module.publishLastReply(from.getName(), to);
-        module.publishLastReply(to, from.getName());
-
-        module.publishSpy(spyComponent);
+        module.publishDM(from.getName(), to, message);
 
         return true;
     }
@@ -244,6 +227,57 @@ public class CrossChatManager implements ChatManager {
             Component mentionMessageComponent = ChatUtils.format(mentionMessage, Placeholder.unparsed("player", packet.mentionerPlayer()));
             ChatUtils.sendMessage(targetPlayer, mentionMessageComponent);
         }
+    }
+
+    public void handleDMInternally(PrivateMessagePacket packet) {
+        Player toPlayer = Bukkit.getPlayerExact(packet.recipient());
+        if (toPlayer == null) return;
+
+        ChatUser user = plugin.getUserManager().getUser(toPlayer.getUniqueId());
+        if (user == null) return;
+
+        if (!user.isMsgEnabled()) {
+            module.getCrossPlayerManager().sendMessage(packet.sender(), ChatUtils.format(
+                    plugin.getPrivateMessageConfig().getString("messages.disabled-other"),
+                    Placeholder.unparsed("player", packet.recipient())
+            ));
+            return;
+        }
+
+        if (user.getIgnoredPlayers().contains(packet.sender())) {
+            module.getCrossPlayerManager().sendMessage(packet.sender(), ChatUtils.format(
+                    plugin.getMessagesConfig().getString("messages.ignoring-you"),
+                    Placeholder.unparsed("player", packet.recipient())
+            ));
+            return;
+        }
+
+        Component spyComponent = ChatUtils.format(
+                plugin.getPrivateMessageConfig().getString("messages.spy"),
+                Placeholder.unparsed("from", packet.sender()),
+                Placeholder.unparsed("to", packet.recipient()),
+                Placeholder.unparsed("message", packet.message())
+        );
+
+        Component msgTarget = ChatUtils.format(
+                plugin.getPrivateMessageConfig().getString("messages.format-target"),
+                Placeholder.unparsed("player", packet.sender()),
+                Placeholder.unparsed("message", packet.message())
+        );
+
+        Component msgSender = ChatUtils.format(
+                plugin.getPrivateMessageConfig().getString("messages.format-self"),
+                Placeholder.unparsed("player", packet.recipient()),
+                Placeholder.unparsed("message", packet.message())
+        );
+
+        ChatUtils.sendMessage(toPlayer, msgTarget);
+        module.getCrossPlayerManager().sendMessage(packet.sender(), msgSender);
+
+        module.publishLastReply(packet.sender(), packet.recipient());
+        module.publishLastReply(packet.recipient(), packet.sender());
+
+        module.publishSpy(spyComponent);
     }
 
 }

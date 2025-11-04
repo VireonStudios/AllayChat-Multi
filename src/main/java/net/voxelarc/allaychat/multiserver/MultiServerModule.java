@@ -15,6 +15,7 @@ import net.kyori.adventure.sound.Sound;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.title.Title;
+import net.voxelarc.allaychat.api.AllayChat;
 import net.voxelarc.allaychat.api.chat.ChatManager;
 import net.voxelarc.allaychat.api.inventory.impl.AllayInventory;
 import net.voxelarc.allaychat.api.module.Module;
@@ -47,6 +48,7 @@ public final class MultiServerModule extends Module {
     public static final String ACTIONBAR_CHANNEL = "allaychat:send:actionbar";
     public static final String SEND_MESSAGE_CHANNEL = "allaychat:send:message";
     public static final String BROADCAST_CHANNEL = "allaychat:send:broadcast";
+    public static final String DM_CHANNEL = "allaychat:send:dm";
     public static final String MENTION_CHANNEL = "allaychat:mention";
     public static final String SPY_CHANNEL = "allaychat:spy";
 
@@ -121,7 +123,7 @@ public final class MultiServerModule extends Module {
         });
 
         connection.subscribe(
-                MESSAGE_CHANNEL, INVENTORY_CHANNEL, BROADCAST_CHANNEL,
+                MESSAGE_CHANNEL, INVENTORY_CHANNEL, BROADCAST_CHANNEL, DM_CHANNEL,
                 PLAY_SOUND_CHANNEL, TITLE_CHANNEL, ACTIONBAR_CHANNEL, SEND_MESSAGE_CHANNEL, SPY_CHANNEL,
                 PLAYER_CLEAR_CHANNEL, PLAYER_JOIN_CHANNEL, PLAYER_QUIT_CHANNEL, REPLY_CHANNEL, MUTE_CHANNEL, MENTION_CHANNEL
         ).whenComplete((result, throwable) -> {
@@ -180,6 +182,7 @@ public final class MultiServerModule extends Module {
     }
 
     private void handleMessage(String channel, String message) {
+        final AllayChat plugin = this.getPlugin();
         switch (channel) {
             case MESSAGE_CHANNEL -> {
                 MessagePacket packet = GSON.fromJson(message, MessagePacket.class);
@@ -187,7 +190,7 @@ public final class MultiServerModule extends Module {
 
                 Bukkit.getServer().filterAudience(audience -> {
                     if (audience instanceof Player player) {
-                        ChatUser chatUser = getPlugin().getUserManager().getUser(player.getUniqueId());
+                        ChatUser chatUser = plugin.getUserManager().getUser(player.getUniqueId());
                         if (chatUser == null) return true;
 
                         return !chatUser.getIgnoredPlayers().contains(packet.playerName());
@@ -200,7 +203,7 @@ public final class MultiServerModule extends Module {
                 InventoryPacket packet = GSON.fromJson(message, InventoryPacket.class);
                 if (!packet.group().equals(group)) return;
 
-                ItemStack[] items = ItemSerializer.itemStackArrayFromBase64(packet.serializedItems(), getPlugin());
+                ItemStack[] items = ItemSerializer.itemStackArrayFromBase64(packet.serializedItems(), plugin);
                 Component title = GsonComponentSerializer.gson().deserialize(packet.serializedTitle());
 
                 Inventory inventory = new AllayInventory(items, title, packet.size()).getInventory();
@@ -294,12 +297,19 @@ public final class MultiServerModule extends Module {
                 if (!packet.group().equals(group)) return;
 
                 Component component = GsonComponentSerializer.gson().deserialize(packet.serializedComponent());
-                getPlugin().getUserManager().getAllUsers().stream().filter(ChatUser::isSpyEnabled).forEach(spyUser -> {
+                plugin.getUserManager().getAllUsers().stream().filter(ChatUser::isSpyEnabled).forEach(spyUser -> {
                     Player player = Bukkit.getPlayer(spyUser.getUniqueId());
                     if (player == null) return;
 
                     player.sendMessage(component);
                 });
+            }
+
+            case DM_CHANNEL -> {
+                PrivateMessagePacket packet = GSON.fromJson(message, PrivateMessagePacket.class);
+                if (!packet.group().equals(group)) return;
+
+                crossChatManager.handleDMInternally(packet);
             }
         }
     }
@@ -364,6 +374,11 @@ public final class MultiServerModule extends Module {
     public void publishSpy(Component component) {
         SpyMessagePacket packet = new SpyMessagePacket(GsonComponentSerializer.gson().serialize(component), group);
         redisConnection.async().publish(SPY_CHANNEL, GSON.toJson(packet));
+    }
+
+    public void publishDM(String from, String to, String message) {
+        PrivateMessagePacket packet = new PrivateMessagePacket(from, to, message, group);
+        redisConnection.async().publish(DM_CHANNEL, GSON.toJson(packet));
     }
 
 }
