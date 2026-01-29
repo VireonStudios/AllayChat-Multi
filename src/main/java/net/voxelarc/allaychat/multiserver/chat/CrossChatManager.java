@@ -135,6 +135,11 @@ public class CrossChatManager implements ChatManager {
     }
 
     @Override
+    public Component formatConnectionMessage(Player player, String message) {
+        return module.getLocalChatManager().formatConnectionMessage(player, message);
+    }
+
+    @Override
     public String getLastMessagedPlayer(String player) {
         return lastMessageCache.getIfPresent(player);
     }
